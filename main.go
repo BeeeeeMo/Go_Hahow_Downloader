@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,7 +20,7 @@ import (
 
 var CONCURRENCY_LIMIT int
 var TOKEN string
-var COURSE_ID string
+var COURSE_IDS string
 
 func fetch(url string) string {
 	client := &http.Client{}
@@ -199,7 +200,7 @@ func init() {
 			return
 		}
 		TOKEN = config.Token
-		COURSE_ID = config.CourseID
+		COURSE_IDS = config.CourseID
 		CONCURRENCY_LIMIT = config.ConcurrencyLimit
 	} else {
 		// read token from args -T
@@ -211,7 +212,7 @@ func init() {
 
 		flag.StringVar(&TOKEN, "T", "", "Token")
 		// read course id from args -C
-		flag.StringVar(&COURSE_ID, "C", "", "Course ID")
+		flag.StringVar(&COURSE_IDS, "C", "", "Course ID")
 		// read concurrency limit from args -L defalut 2
 		flag.IntVar(&CONCURRENCY_LIMIT, "L", 2, "Concurrency Limit")
 		flag.Parse()
@@ -221,35 +222,40 @@ func init() {
 func main() {
 	// start time
 	start := time.Now()
-	courseTitle := cleanName(fetchTitle(COURSE_ID))
-	log.Info("Course Downloading: ", courseTitle)
-	var wg sync.WaitGroup
-	ch := make(chan struct{}, CONCURRENCY_LIMIT)
-	Course := fetchCourse(COURSE_ID)
-	for _, chapter := range Course {
-		chapterTitle := cleanName(chapter.ChapterNumber + "_" + chapter.Title)
-		for _, lecture := range chapter.Items {
-			lectureTitle := cleanName(lecture.Content.Title)
-			if lecture.Type != "LECTURE" {
-				continue
-			}
-			filePath := "./" + courseTitle + "/" + chapterTitle
-			fileName := lecture.ChapterNumber + "_" + lectureTitle
-			wg.Add(1)
-			// Download lecture Video
-			go func(lectureId, dir, fileName, chapterNumber string) {
-				ch <- struct{}{}
-				defer func() {
-					<-ch
-					wg.Done()
-				}()
-				mkdir(filePath)
-				downloadLecture(lectureId, dir, chapterNumber, fileName)
-			}(lecture.Content.ID, filePath, fileName, lecture.ChapterNumber)
+	// split course id
+	courseIds := strings.Split(COURSE_IDS, ",")
+	// download course
+	for _, courseId := range courseIds {
+		courseTitle := cleanName(fetchTitle(courseId))
+		log.Info("Course Downloading: ", courseTitle)
+		var wg sync.WaitGroup
+		ch := make(chan struct{}, CONCURRENCY_LIMIT)
+		Course := fetchCourse(courseId)
+		for _, chapter := range Course {
+			chapterTitle := cleanName(chapter.ChapterNumber + "_" + chapter.Title)
+			for _, lecture := range chapter.Items {
+				lectureTitle := cleanName(lecture.Content.Title)
+				if lecture.Type != "LECTURE" {
+					continue
+				}
+				filePath := "./" + courseTitle + "/" + chapterTitle
+				fileName := lecture.ChapterNumber + "_" + lectureTitle
+				wg.Add(1)
+				// Download lecture Video
+				go func(lectureId, dir, fileName, chapterNumber string) {
+					ch <- struct{}{}
+					defer func() {
+						<-ch
+						wg.Done()
+					}()
+					mkdir(filePath)
+					downloadLecture(lectureId, dir, chapterNumber, fileName)
+				}(lecture.Content.ID, filePath, fileName, lecture.ChapterNumber)
 
+			}
 		}
+		wg.Wait()
+		elapsed := time.Since(start)
+		log.Info("Used time: ", elapsed)
 	}
-	wg.Wait()
-	elapsed := time.Since(start)
-	log.Info("Used time: ", elapsed)
 }
