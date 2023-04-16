@@ -52,7 +52,7 @@ func fetch(url string) string {
 }
 
 func fetchTitle(courseId string) string {
-	// fmt.Println("Fetching title: ", courseId)
+	log.Debug("Fetching title: ", courseId)
 	web := fetch("https://api.hahow.in/api/courses/" + courseId)
 	var c = hahow.CoueseInfo{}
 
@@ -66,7 +66,7 @@ func fetchTitle(courseId string) string {
 }
 
 func fetchCourse(courseId string) hahow.Course {
-	// fmt.Println("Fetching course: ", courseId)
+	log.Debug("Fetching course: ", courseId)
 	web := fetch("https://api.hahow.in/api/courses/" + courseId + "/modules/items")
 	var course = hahow.Course{}
 
@@ -80,7 +80,7 @@ func fetchCourse(courseId string) hahow.Course {
 }
 
 func fetchLecture(lectureId string) hahow.Lecture {
-	// fmt.Println("Fetching lecture: ", lectureId)
+	log.Debug("Fetching lecture: ", lectureId)
 	web := fetch("https://api.hahow.in/api/lectures/" + lectureId)
 	var lecture = hahow.Lecture{}
 
@@ -109,31 +109,39 @@ func downloadLecture(lectureId, dir, chapterNumber, fileName string) {
 	lecture := fetchLecture(lectureId)
 	url := getHighestQualityVideo(lecture)
 	log.Info("Downloaded: ", fileName)
-	downloadFile(url, dir+"/"+fileName+".mp4")
-	for _, v := range lecture.Video.Subtitles {
-		if v.Language == "zh-TW" {
-			downloadFile(v.Link, dir+"/"+fileName+".srt")
+	srtFileName := dir + "/" + fileName + ".srt"
+	if _, err := os.Stat(srtFileName); os.IsNotExist(err) {
+		downloadFile(url, dir+"/"+fileName+".mp4")
+		for _, v := range lecture.Video.Subtitles {
+			if v.Language == "zh-TW" {
+				downloadFile(v.Link, srtFileName)
+			}
 		}
 	}
 
+	mdFileName := dir + "/" + chapterNumber + "_老師的話.md"
 	if lecture.Description != "" {
+		log.Debug("Writing description file: ", mdFileName)
 		md := html2md.Convert(lecture.Description)
-		ioutil.WriteFile(dir+"/"+chapterNumber+"_老師的話.md", []byte(md), 0644)
+		ioutil.WriteFile(mdFileName, []byte(md), 0644)
 	}
 
-	if lecture.Assets != nil {
+	if len(lecture.Assets) > 0 {
 		var data string
-		for _, v := range lecture.Assets {
-			data += v.DisplayName + "\r\n" + v.URL + "\r\n\r\n"
+		assetsFileName := dir + "/" + chapterNumber + "_附件.txt"
+		log.Debug("Writing assets file: ", assetsFileName)
+		if _, err := os.Stat(assetsFileName); os.IsNotExist(err) {
+			for _, v := range lecture.Assets {
+				data += v.DisplayName + "\r\n" + v.URL + "\r\n\r\n"
+			}
+			ioutil.WriteFile(assetsFileName, []byte(data), 0644)
 		}
-		// fmt.Printf("data: %v\n", data)
-		ioutil.WriteFile(dir+"/"+chapterNumber+"_附件.txt", []byte(data), 0644)
 	}
 
 }
 
 func downloadFile(url string, path string) {
-	// fmt.Println("Downloading file: ", url)
+	log.Debug("Downloading file: ", url)
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -181,18 +189,33 @@ func init() {
 	log.SetOutput(os.Stdout)
 	log.SetLevel(log.InfoLevel)
 
-	// read token from args -T
-	if len(os.Args) < 2 {
-		// print help info
-		fmt.Println("--help for more info")
-		os.Exit(1)
+	// if config file exists, read token from config file
+	if _, err := os.Stat("config.json"); err == nil {
+		file, _ := ioutil.ReadFile("config.json")
+		var config = hahow.Config{}
+		err := json.Unmarshal([]byte(file), &config)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+		TOKEN = config.Token
+		COURSE_ID = config.CourseID
+		CONCURRENCY_LIMIT = config.ConcurrencyLimit
+	} else {
+		// read token from args -T
+		if len(os.Args) < 2 {
+			// print help info
+			fmt.Println("--help for more info")
+			os.Exit(1)
+		}
+
+		flag.StringVar(&TOKEN, "T", "", "Token")
+		// read course id from args -C
+		flag.StringVar(&COURSE_ID, "C", "", "Course ID")
+		// read concurrency limit from args -L defalut 2
+		flag.IntVar(&CONCURRENCY_LIMIT, "L", 2, "Concurrency Limit")
+		flag.Parse()
 	}
-	flag.StringVar(&TOKEN, "T", "", "Token")
-	// read course id from args -C
-	flag.StringVar(&COURSE_ID, "C", "", "Course ID")
-	// read concurrency limit from args -L defalut 2
-	flag.IntVar(&CONCURRENCY_LIMIT, "L", 2, "Concurrency Limit")
-	flag.Parse()
 }
 
 func main() {

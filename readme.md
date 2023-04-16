@@ -9,3 +9,14 @@ go build main.go
 ```bash
 main -T <token> -C <course_ID> -L <Concurrency Limit:Optional>
 ```
+### or using config file
+```bash
+cat config.json
+{
+    "TOKEN": "Bearer <token>",
+    "COURSE_ID": "<course_ID>",
+    "ConcurrencyLimit": 2
+}
+
+main
+```

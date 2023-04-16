@@ -347,3 +347,9 @@ type Lecture struct {
 		VideoThumbnailID string `json:"videoThumbnailId"`
 	} `json:"video"`
 }
+
+type Config struct {
+	Token            string `json:"TOKEN"`
+	CourseID         string `json:"COURSE_ID"`
+	ConcurrencyLimit int    `json:"ConcurrencyLimit"`
+}
